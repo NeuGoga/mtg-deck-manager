@@ -93,7 +93,7 @@ app.whenReady().then(() => {
       db[scryfallData.name] = cardToSave
       fs.writeFileSync(cardsDbPath, JSON.stringify(db, null, 2))
 
-      await delay(150)
+      await delay(300)
 
       return { success: true, data: cardToSave }
     } catch (error: any) {

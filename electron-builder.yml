@@ -1,5 +1,5 @@
 appId: com.electron.app
-productName: mtg-deck-manager
+productName: MTG Deck Manager
 directories:
   buildResources: build
 files:
@@ -12,13 +12,16 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: mtg-deck-manager
+  target: nsis
+  icon: resources/icon.ico
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  target: dmg
+  icon: resources/icon.icns
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
@@ -36,7 +39,7 @@ linux:
   maintainer: electronjs.org
   category: Utility
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${productName}-${version}-${arch}.${ext}
 npmRebuild: false
 publish:
   provider: generic

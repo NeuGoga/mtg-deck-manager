@@ -30,12 +30,13 @@ export default function App() {
   }, [decks])
 
   const createNewDeck = () => {
-    const newDeck: Deck = {
-      id: Date.now(),
-      name: 'New Unnamed Deck',
-      format: 'Modern',
-      tags: [],
-      cards: []
+    const newDeck: Deck = { 
+      id: Date.now(), 
+      name: 'New Unnamed Deck', 
+      format: 'Modern', 
+      tags: [], 
+      cards: [],
+      sideboard:[]
     }
     setDecks([...decks, newDeck])
     setActiveDeck(newDeck)

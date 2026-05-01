@@ -16,6 +16,7 @@ export interface Deck {
   format: string
   tags: string[]
   cards: CardData[]
+  sideboard?: CardData[]
   coverCardId?: string
   coverCardUrl?: string
 }

@@ -1,3 +1,4 @@
+// src/components/DeckBuilder.tsx
 import { useState, useEffect, useMemo } from 'react'
 import { Deck, CardData } from '../types'
 
@@ -101,7 +102,8 @@ const ManaCurve = ({ cards, theme }: { cards: CardData[]; theme: any }) => {
       style={{
         display: 'flex',
         gap: '5px',
-        height: '140px',
+        height: '160px',
+        flexShrink: 0,
         marginTop: '20px',
         backgroundColor: theme.element,
         padding: '15px',
@@ -140,8 +142,6 @@ const ManaCurve = ({ cards, theme }: { cards: CardData[]; theme: any }) => {
   )
 }
 
-const delay = (ms: number) => new Promise((res) => setTimeout(res, ms))
-
 export default function DeckBuilder({
   activeDeck,
   updateActiveDeck,
@@ -149,6 +149,8 @@ export default function DeckBuilder({
   onGoBack,
   onDeleteDeck
 }: DeckBuilderProps) {
+  const [activeTab, setActiveTab] = useState<'main' | 'sideboard'>('main')
+
   const [importText, setImportText] = useState('')
   const [isImporting, setIsImporting] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -156,12 +158,13 @@ export default function DeckBuilder({
 
   const [hoveredCard, setHoveredCard] = useState<CardData | null>(null)
   const [hoverImage, setHoverImage] = useState<string | null>(null)
-
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  const mainCards = activeDeck.cards || []
+  const sideCards = activeDeck.sideboard || []
 
   useEffect(() => {
     let isMounted = true
-
     if (hoveredCard) {
       setHoverImage(null)
       ;(window as any).api
@@ -180,30 +183,8 @@ export default function DeckBuilder({
     setTimeout(() => setToastMessage(null), 2500)
   }
 
-  const handleExportText = async () => {
-    const text = activeDeck.cards.map((c) => `${c.quantity} ${c.name}`).join('\n')
-    await navigator.clipboard.writeText(text)
-    showToast('Decklist copied to clipboard!')
-  }
-
-  const setExactQuantity = (card: CardData, amount: number) => {
-    if (amount <= 0) {
-      removeCard(card)
-      return
-    }
-    const newCards = activeDeck.cards.map((c) =>
-      c.id === card.id ? { ...c, quantity: amount } : c
-    )
-    updateActiveDeck({ cards: newCards })
-  }
-
-  const removeCard = (card: CardData) => {
-    const newCards = activeDeck.cards.filter((c) => c.id !== card.id)
-    updateActiveDeck({ cards: newCards })
-  }
-
   const compressAndEncode = async (text: string) => {
-    const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))
+    const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('deflate-raw'))
     const buffer = await new Response(stream).arrayBuffer()
     return btoa(String.fromCharCode(...new Uint8Array(buffer)))
   }
@@ -211,11 +192,36 @@ export default function DeckBuilder({
   const decodeAndDecompress = async (base64: string) => {
     try {
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
       return await new Response(stream).text()
     } catch (e) {
-      return decodeURIComponent(atob(base64))
+      try {
+        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
+        return await new Response(stream).text()
+      } catch (e2) {
+        return decodeURIComponent(atob(base64))
+      }
     }
+  }
+
+  const handleExportText = async () => {
+    let text = mainCards.map((c) => `${c.quantity} ${c.name}`).join('\n')
+    if (sideCards.length > 0) {
+      text += '\nSideboard\n' + sideCards.map((c) => `${c.quantity} ${c.name}`).join('\n')
+    }
+    await navigator.clipboard.writeText(text)
+    showToast('Decklist copied to clipboard!')
+  }
+
+  const handleExportCode = async () => {
+    const encodeBoard = (cards: CardData[]) => cards.map((c) => `${c.quantity}${c.name}`).join('|')
+    let compactText = encodeBoard(mainCards)
+    if (sideCards.length > 0) compactText += '||' + encodeBoard(sideCards)
+
+    const compressed = await compressAndEncode(compactText)
+    await navigator.clipboard.writeText(compressed)
+    showToast('Deck Code copied!')
   }
 
   const handleImport = async () => {
@@ -229,69 +235,133 @@ export default function DeckBuilder({
       parsedText = await decodeAndDecompress(parsedText)
     }
 
-    const lines = parsedText.split('\n')
-    const importedCards: CardData[] = []
+    let lines: string[] = []
+    if (parsedText.includes('|')) {
+      const parts = parsedText.split('||')
+      if (parts[0]) lines.push(...parts[0].split('|'))
+      if (parts[1]) {
+        lines.push('Sideboard')
+        lines.push(...parts[1].split('|'))
+      }
+    } else {
+      lines = parsedText.split('\n')
+    }
+
+    const mainImported: CardData[] = []
+    const sideImported: CardData[] = []
     const failedCards: string[] = []
 
+    let currentTarget: 'main' | 'sideboard' = activeTab
+
     for (const line of lines) {
-      const match = line.trim().match(/^(\d+)\s+(.+)$/)
+      if (line.trim().toLowerCase() === 'sideboard') {
+        currentTarget = 'sideboard'
+        continue
+      }
+
+      const match = line.trim().match(/^(\d+)\s*(.+)$/)
       if (match) {
         const quantity = parseInt(match[1])
-        const cardName = match[2]
+        const cardName = match[2].trim()
+
         const result = await (window as any).api.getCardData(cardName)
-        if (result.success) importedCards.push({ ...result.data, quantity })
-        else failedCards.push(cardName)
+
+        if (result.success) {
+          if (currentTarget === 'main') mainImported.push({ ...result.data, quantity })
+          else sideImported.push({ ...result.data, quantity })
+        } else {
+          failedCards.push(cardName)
+        }
       }
     }
 
     if (failedCards.length > 0) setImportErrors(failedCards)
 
-    const newCards = [...activeDeck.cards]
-    for (const card of importedCards) {
-      const existing = newCards.findIndex((c) => c.name.toLowerCase() === card.name.toLowerCase())
+    const newMainCards = [...mainCards]
+    for (const card of mainImported) {
+      const existing = newMainCards.findIndex(
+        (c) => c.name.toLowerCase() === card.name.toLowerCase()
+      )
       if (existing !== -1)
-        newCards[existing] = {
-          ...newCards[existing],
-          quantity: newCards[existing].quantity + card.quantity
+        newMainCards[existing] = {
+          ...newMainCards[existing],
+          quantity: newMainCards[existing].quantity + card.quantity
         }
-      else newCards.push(card)
+      else newMainCards.push(card)
     }
 
-    updateActiveDeck({ cards: newCards })
+    const newSideCards = [...sideCards]
+    for (const card of sideImported) {
+      const existing = newSideCards.findIndex(
+        (c) => c.name.toLowerCase() === card.name.toLowerCase()
+      )
+      if (existing !== -1)
+        newSideCards[existing] = {
+          ...newSideCards[existing],
+          quantity: newSideCards[existing].quantity + card.quantity
+        }
+      else newSideCards.push(card)
+    }
+
+    updateActiveDeck({ cards: newMainCards, sideboard: newSideCards })
     setImportText('')
     setIsImporting(false)
   }
 
-  const handleExportCode = async () => {
-    const text = activeDeck.cards.map((c) => `${c.quantity} ${c.name}`).join('\n')
-    const compressed = await compressAndEncode(text) // Async now!
-    await navigator.clipboard.writeText(compressed)
-    showToast('Deck Code copied!')
-  }
-
   const handleReloadPrices = async () => {
     setIsRefreshing(true)
-    const updatedCards = [...activeDeck.cards]
+    const updatedMain = [...mainCards]
+    const updatedSide = [...sideCards]
 
-    for (let i = 0; i < updatedCards.length; i++) {
-      const result = await (window as any).api.getCardData(updatedCards[i].name, true)
-      if (result.success) {
-        updatedCards[i] = { ...updatedCards[i], prices: result.data.prices }
-      }
-      await delay(200)
+    for (let i = 0; i < updatedMain.length; i++) {
+      const result = await (window as any).api.getCardData(updatedMain[i].name, true)
+      if (result.success) updatedMain[i] = { ...updatedMain[i], prices: result.data.prices }
     }
 
-    updateActiveDeck({ cards: updatedCards })
+    for (let i = 0; i < updatedSide.length; i++) {
+      const result = await (window as any).api.getCardData(updatedSide[i].name, true)
+      if (result.success) updatedSide[i] = { ...updatedSide[i], prices: result.data.prices }
+    }
+
+    updateActiveDeck({ cards: updatedMain, sideboard: updatedSide })
     setIsRefreshing(false)
     showToast('Prices updated!')
   }
 
-  const totalCards = activeDeck.cards.reduce((sum, c) => sum + c.quantity, 0)
-  const totalPrice = activeDeck.cards.reduce(
+  const setExactQuantity = (card: CardData, amount: number, board: 'main' | 'sideboard') => {
+    if (amount <= 0) {
+      removeCard(card, board)
+      return
+    }
+    const list = board === 'main' ? mainCards : sideCards
+    const newCards = list.map((c) => (c.id === card.id ? { ...c, quantity: amount } : c))
+
+    if (board === 'main') updateActiveDeck({ cards: newCards })
+    else updateActiveDeck({ sideboard: newCards })
+  }
+
+  const removeCard = (card: CardData, board: 'main' | 'sideboard') => {
+    const list = board === 'main' ? mainCards : sideCards
+    const newCards = list.filter((c) => c.id !== card.id)
+
+    if (board === 'main') updateActiveDeck({ cards: newCards })
+    else updateActiveDeck({ sideboard: newCards })
+  }
+
+  const mainCount = mainCards.reduce((sum, c) => sum + c.quantity, 0)
+  const sideCount = sideCards.reduce((sum, c) => sum + c.quantity, 0)
+
+  const mainPrice = mainCards.reduce(
     (sum, card) => sum + parseFloat(card.prices?.usd || '0') * card.quantity,
     0
   )
-  const sortedCards = [...activeDeck.cards].sort((a, b) => {
+  const sidePrice = sideCards.reduce(
+    (sum, card) => sum + parseFloat(card.prices?.usd || '0') * card.quantity,
+    0
+  )
+
+  const currentList = activeTab === 'main' ? mainCards : sideCards
+  const sortedCards = [...currentList].sort((a, b) => {
     if (a.cmc !== b.cmc) return a.cmc - b.cmc
     return a.name.localeCompare(b.name)
   })
@@ -564,7 +634,13 @@ export default function DeckBuilder({
               width: '100%'
             }}
           >
-            {isImporting ? 'Importing...' : 'Import'}
+            {isImporting ? (
+              <span className="spinner" style={{ display: 'inline-block' }}>
+                ⟳
+              </span>
+            ) : (
+              `Import to ${activeTab === 'main' ? 'Mainboard' : 'Sideboard'}`
+            )}
           </button>
 
           {importErrors.length > 0 && (
@@ -607,15 +683,48 @@ export default function DeckBuilder({
           border: `1px solid ${t.border}`
         }}
       >
-        <h3 style={{ marginTop: 0 }}>Decklist</h3>
-        {sortedCards.length === 0 && <p style={{ color: t.subText }}>No cards in deck yet.</p>}
+        <h3 style={{ marginTop: 0, display: 'flex', gap: '15px', fontSize: '20px' }}>
+          <span
+            onClick={() => setActiveTab('main')}
+            style={{
+              cursor: 'pointer',
+              color: activeTab === 'main' ? t.text : t.subText,
+              textDecoration: activeTab === 'main' ? 'underline' : 'none',
+              textUnderlineOffset: '5px'
+            }}
+          >
+            Decklist
+          </span>
+          <span style={{ color: t.border }}>/</span>
+          <span
+            onClick={() => setActiveTab('sideboard')}
+            style={{
+              cursor: 'pointer',
+              color: activeTab === 'sideboard' ? t.text : t.subText,
+              textDecoration: activeTab === 'sideboard' ? 'underline' : 'none',
+              textUnderlineOffset: '5px'
+            }}
+          >
+            Sideboard
+          </span>
+        </h3>
+
+        {sortedCards.length === 0 && (
+          <p style={{ color: t.subText }}>No cards in {activeTab} yet.</p>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {sortedCards.map((card) => {
             const formatLimit = activeDeck.format.toLowerCase() === 'commander' ? 1 : 4
             const isBasicLand =
               card.type_line?.toLowerCase().includes('basic land') ||
               card.type_line?.toLowerCase().includes('basic snow land')
-            const overLimit = !isBasicLand && card.quantity > formatLimit
+
+            const totalInDeck =
+              (mainCards.find((c) => c.name === card.name)?.quantity || 0) +
+              (sideCards.find((c) => c.name === card.name)?.quantity || 0)
+            const overLimit = !isBasicLand && totalInDeck > formatLimit
+
             const activeFormat = activeDeck.format.toLowerCase() || 'standard'
             const isIllegal =
               card.legalities?.[activeFormat] !== 'legal' &&
@@ -650,7 +759,7 @@ export default function DeckBuilder({
                       }}
                     >
                       <button
-                        onClick={() => setExactQuantity(card, card.quantity - 1)}
+                        onClick={() => setExactQuantity(card, card.quantity - 1, activeTab)}
                         style={{
                           background: 'none',
                           border: 'none',
@@ -663,12 +772,12 @@ export default function DeckBuilder({
                       </button>
                       <QuantityInput
                         quantity={card.quantity}
-                        onChange={(val: number) => setExactQuantity(card, val)}
-                        onRemove={() => removeCard(card)}
+                        onChange={(val: number) => setExactQuantity(card, val, activeTab)}
+                        onRemove={() => removeCard(card, activeTab)}
                         theme={t}
                       />
                       <button
-                        onClick={() => setExactQuantity(card, card.quantity + 1)}
+                        onClick={() => setExactQuantity(card, card.quantity + 1, activeTab)}
                         style={{
                           background: 'none',
                           border: 'none',
@@ -707,7 +816,7 @@ export default function DeckBuilder({
                     }}
                   >
                     {isIllegal ? `• Not legal in ${activeDeck.format}. ` : ''}
-                    {overLimit ? `• Max ${formatLimit} allowed.` : ''}
+                    {overLimit ? `• Max ${formatLimit} allowed (Main+Side).` : ''}
                   </div>
                 )}
               </div>
@@ -718,7 +827,7 @@ export default function DeckBuilder({
 
       <div
         style={{
-          flex: 1,
+          flex: 1.2,
           display: 'flex',
           flexDirection: 'column',
           overflowY: 'auto',
@@ -727,34 +836,34 @@ export default function DeckBuilder({
       >
         <div
           style={{
-            height: '380px',
+            flex: 1,
+            maxHeight: '420px',
+            minHeight: '320px',
             backgroundColor: t.panel,
             border: `1px solid ${t.border}`,
             borderRadius: '10px',
             display: 'flex',
-            flexDirection: 'column',
             justifyContent: 'center',
             alignItems: 'center',
             overflow: 'hidden',
-            padding: '10px'
+            padding: '10px',
+            paddingBottom: '20px',
+            position: 'relative'
           }}
         >
           {hoverImage ? (
             <>
-              <div
-                style={{ flex: 1, overflow: 'hidden', display: 'flex', justifyContent: 'center' }}
-              >
-                <img
-                  src={hoverImage}
-                  alt="Preview"
-                  style={{
-                    maxWidth: '100%',
-                    maxHeight: '100%',
-                    borderRadius: '10px',
-                    objectFit: 'contain'
-                  }}
-                />
-              </div>
+              <img
+                src={hoverImage}
+                alt="Preview"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  borderRadius: '10px',
+                  objectFit: 'contain'
+                }}
+              />
+
               {hoveredCard && (
                 <button
                   onClick={() =>
@@ -764,15 +873,20 @@ export default function DeckBuilder({
                     })
                   }
                   style={{
-                    marginTop: '12px',
+                    position: 'absolute',
+                    bottom: '5px',
                     padding: '8px 15px',
-                    backgroundColor: t.element,
-                    color: t.text,
-                    border: `1px solid ${t.border}`,
-                    borderRadius: '5px',
+                    backgroundColor: 'rgba(0,0,0,0.7)',
+                    color: 'white',
+                    border: `1px solid #555`,
+                    borderRadius: '20px',
                     cursor: 'pointer',
-                    fontSize: '13px'
+                    fontSize: '12px',
+                    backdropFilter: 'blur(4px)',
+                    transition: 'background 0.2s'
                   }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.7)')}
                 >
                   Set as Deck Cover
                 </button>
@@ -782,39 +896,91 @@ export default function DeckBuilder({
             <p style={{ color: t.subText }}>Hover a card to preview</p>
           )}
         </div>
-        <ManaCurve cards={activeDeck.cards} theme={t} />
+
+        <ManaCurve cards={mainCards} theme={t} />
+
         <div
           style={{
-            marginTop: '20px',
+            marginTop: '15px',
             backgroundColor: t.panel,
             border: `1px solid ${t.border}`,
-            padding: '20px',
+            padding: '15px',
             borderRadius: '10px'
           }}
         >
-          <h3 style={{ margin: '0 0 15px 0' }}>Deck Stats</h3>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '16px' }}>Deck Stats</h3>
+
           <div
             style={{
               display: 'flex',
               justifyContent: 'space-between',
-              fontSize: '16px',
-              marginBottom: '10px'
+              fontSize: '13px',
+              marginBottom: '4px'
             }}
           >
-            <span style={{ color: t.subText }}>Total Cards</span>
-            <strong>{totalCards}</strong>
+            <span style={{ color: t.subText }}>Mainboard</span>
+            <strong>{mainCount}</strong>
           </div>
           <div
             style={{
               display: 'flex',
               justifyContent: 'space-between',
-              fontSize: '20px',
-              alignItems: 'center'
+              fontSize: '13px',
+              marginBottom: '4px'
+            }}
+          >
+            <span style={{ color: t.subText }}>Sideboard</span>
+            <strong>{sideCount}</strong>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '14px',
+              marginBottom: '12px',
+              borderTop: `1px solid ${t.border}`,
+              paddingTop: '4px'
+            }}
+          >
+            <span style={{ color: t.subText }}>Total Cards</span>
+            <strong>{mainCount + sideCount}</strong>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '13px',
+              marginBottom: '4px'
+            }}
+          >
+            <span style={{ color: t.subText }}>Mainboard Value</span>
+            <strong style={{ color: t.success }}>${mainPrice.toFixed(2)}</strong>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '13px',
+              marginBottom: '4px'
+            }}
+          >
+            <span style={{ color: t.subText }}>Sideboard Value</span>
+            <strong style={{ color: t.success }}>${sidePrice.toFixed(2)}</strong>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '16px',
+              alignItems: 'center',
+              borderTop: `1px solid ${t.border}`,
+              paddingTop: '6px'
             }}
           >
             <span style={{ color: t.subText }}>Total Value</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <strong style={{ color: t.success }}>${totalPrice.toFixed(2)}</strong>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <strong style={{ color: t.success }}>${(mainPrice + sidePrice).toFixed(2)}</strong>
               <button
                 onClick={handleReloadPrices}
                 disabled={isRefreshing}
@@ -823,7 +989,7 @@ export default function DeckBuilder({
                   border: 'none',
                   color: t.text,
                   cursor: 'pointer',
-                  fontSize: '18px',
+                  fontSize: '16px',
                   padding: 0
                 }}
               >

@@ -1,5 +1,6 @@
 {
   "name": "mtg-deck-manager",
+  "productName": "MTG Deck Manager",
   "version": "1.0.0",
   "description": "An Electron application with React and TypeScript",
   "main": "./out/main/index.js",
@@ -46,10 +47,12 @@
     "vite": "^7.2.6"
   },
   "build": {
-    "appId": "com.example.mtgdeckmanager",
+    "productName": "MTG Deck Manager",
+    "appId": "com.mtgdeckmanager.app",
     "icon": "build/icon",
     "win": {
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "target": "nsis"
     },
     "mac": {
       "icon": "build/icon.icns"
