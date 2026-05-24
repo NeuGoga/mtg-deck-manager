@@ -31,7 +31,7 @@ export default function DeckBuilder({
   const [showImportModal, setShowImportModal] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
-  const [hoveredCard, setHoveredCard] = useState<HydratedCard | null>(null)
+  const [_hoveredCard, setHoveredCard] = useState<HydratedCard | null>(null)
   const [selectedCard, setSelectedCard] = useState<HydratedCard | null>(null)
 
   const [importText, setImportText] = useState('')
