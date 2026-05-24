@@ -10,6 +10,8 @@ function createWindow(): void {
     width: 1200,
     height: 800,
     show: false,
+    frame: false,
+    titleBarStyle: 'hidden',
     autoHideMenuBar: true,
     title: 'MTG Deck Manager',
     ...(process.platform === 'linux' ? { icon } : {}),
@@ -21,6 +23,7 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
+    mainWindow.maximize()
     mainWindow.show()
   })
 
@@ -34,6 +37,13 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  ipcMain.on('window-minimize', () => mainWindow.minimize())
+  ipcMain.on('window-maximize', () => {
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
+  })
+  ipcMain.on('window-close', () => mainWindow.close())
 }
 
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms))
@@ -133,6 +143,19 @@ app.whenReady().then(() => {
   ipcMain.handle('save-decks', (_event, decks) => {
     fs.writeFileSync(decksDbPath, JSON.stringify(decks, null, 2))
     return true
+  })
+
+  ipcMain.handle('hydrate-cards', (_event, identifiers: string[]) => {
+    const db = JSON.parse(fs.readFileSync(cardsDbPath, 'utf8'))
+    const hydrated: Record<string, any> = {}
+    const dbValues = Object.values(db) as any[]
+
+    identifiers.forEach(identifier => {
+      const card = dbValues.find(c => c.id === identifier || c.name.toLowerCase() === identifier.toLowerCase())
+      if (card) hydrated[identifier] = card
+    })
+
+    return hydrated
   })
 
   app.on('browser-window-created', (_, window) => {

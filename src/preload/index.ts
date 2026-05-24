@@ -7,7 +7,11 @@ const api = {
     ipcRenderer.invoke('get-card-image', cardId, imageUrl),
   getCardData: (cardName: string, forceUpdate: boolean) => ipcRenderer.invoke('get-card-data', cardName, forceUpdate),
   getDecks: () => ipcRenderer.invoke('get-decks'),
-  saveDecks: (decks: any) => ipcRenderer.invoke('save-decks', decks)
+  saveDecks: (decks: any) => ipcRenderer.invoke('save-decks', decks),
+  hydrateCards: (identifiers: string[]) => ipcRenderer.invoke('hydrate-cards', identifiers),
+  minimizeWindow: () => ipcRenderer.send('window-minimize'),
+  maximizeWindow: () => ipcRenderer.send('window-maximize'),
+  closeWindow: () => ipcRenderer.send('window-close')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

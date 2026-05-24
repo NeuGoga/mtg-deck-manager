@@ -3,6 +3,7 @@ import { Deck } from './types'
 import { THEMES } from './theme'
 import Home from './components/Home'
 import DeckBuilder from './components/DeckBuilder'
+import TitleBar from './components/TitleBar'
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'home' | 'editor' | 'settings'>('home')
@@ -35,8 +36,8 @@ export default function App() {
       name: 'New Unnamed Deck', 
       format: 'Modern', 
       tags: [], 
-      cards: [],
-      sideboard:[]
+      sections: ['Mainboard', 'Sideboard'],
+      cards: [] 
     }
     setDecks([...decks, newDeck])
     setActiveDeck(newDeck)
@@ -81,6 +82,7 @@ export default function App() {
 
   if (currentScreen === 'settings') {
     return (
+      
       <div
         style={{
           height: '100vh',
@@ -90,6 +92,7 @@ export default function App() {
           backgroundColor: t.bg
         }}
       >
+        
         <style>{globalStyles}</style>
         <button
           onClick={() => setCurrentScreen('home')}
@@ -154,6 +157,7 @@ export default function App() {
   return (
     <>
       <style>{globalStyles}</style>
+      <TitleBar theme={t} /> 
 
       {currentScreen === 'home' && (
         <Home

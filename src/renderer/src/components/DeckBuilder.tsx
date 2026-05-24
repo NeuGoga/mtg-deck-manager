@@ -1,6 +1,10 @@
-// src/components/DeckBuilder.tsx
 import { useState, useEffect, useMemo } from 'react'
-import { Deck, CardData } from '../types'
+import { Deck, CardData, HydratedCard } from '../types'
+import DeckHeader from './DeckHeader'
+import DeckToolbar from './DeckToolbar'
+import DeckCards from './DeckCards'
+import CardModal from './CardModal'
+import DeckStats from './DeckStats'
 
 interface DeckBuilderProps {
   activeDeck: Deck
@@ -10,138 +14,6 @@ interface DeckBuilderProps {
   onDeleteDeck: (id: number) => void
 }
 
-const formats = ['Standard', 'Pioneer', 'Modern', 'Legacy', 'Vintage', 'Commander', 'Pauper']
-
-const QuantityInput = ({ quantity, onChange, onRemove, theme }: any) => {
-  const [val, setVal] = useState(quantity.toString())
-  useEffect(() => {
-    setVal(quantity.toString())
-  }, [quantity])
-
-  return (
-    <input
-      value={val}
-      onChange={(e) => setVal(e.target.value)}
-      onBlur={() => {
-        const parsed = parseInt(val)
-        if (isNaN(parsed) || parsed <= 0) onRemove()
-        else onChange(parsed)
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur()
-      }}
-      style={{
-        width: '24px',
-        textAlign: 'center',
-        background: 'transparent',
-        border: 'none',
-        color: theme.text,
-        outline: 'none',
-        fontWeight: 'bold',
-        fontSize: '15px'
-      }}
-    />
-  )
-}
-
-const ManaCost = ({ cost }: { cost: string }) => {
-  if (!cost) return null
-  const symbols = cost.match(/\{[^}]+\}/g) || []
-  const getColor = (sym: string) => {
-    if (sym.includes('W')) return '#F8E7B9'
-    if (sym.includes('U')) return '#B3CEEA'
-    if (sym.includes('B')) return '#A69F9D'
-    if (sym.includes('R')) return '#EB9F82'
-    if (sym.includes('G')) return '#C4D3CA'
-    return '#CCCCCC'
-  }
-  return (
-    <div style={{ display: 'inline-flex', gap: '3px', alignItems: 'center' }}>
-      {symbols.map((sym, i) => (
-        <div
-          key={i}
-          style={{
-            width: '18px',
-            height: '18px',
-            borderRadius: '50%',
-            backgroundColor: getColor(sym),
-            color: 'black',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            fontSize: '10px',
-            fontWeight: 'bold',
-            border: '1px solid #333'
-          }}
-        >
-          {sym.replace(/[{}]/g, '')}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-const ManaCurve = ({ cards, theme }: { cards: CardData[]; theme: any }) => {
-  const curve = useMemo(() => {
-    const counts = [0, 0, 0, 0, 0, 0, 0]
-    cards.forEach((c) => {
-      if (
-        c.type_line?.toLowerCase().includes('land') &&
-        !c.type_line?.toLowerCase().includes('creature')
-      )
-        return
-      const cmc = Math.min(Math.floor(c.cmc || 0), 6)
-      counts[cmc] += c.quantity
-    })
-    return counts
-  }, [cards])
-  const max = Math.max(...curve, 1)
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        gap: '5px',
-        height: '160px',
-        flexShrink: 0,
-        marginTop: '20px',
-        backgroundColor: theme.element,
-        padding: '15px',
-        borderRadius: '10px'
-      }}
-    >
-      {curve.map((count, i) => (
-        <div
-          key={i}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            flex: 1,
-            height: '100%'
-          }}
-        >
-          <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', width: '100%' }}>
-            <div
-              style={{
-                width: '100%',
-                height: `${(count / max) * 100}%`,
-                backgroundColor: theme.primary,
-                borderRadius: '3px 3px 0 0',
-                transition: 'height 0.3s'
-              }}
-            />
-          </div>
-          <span style={{ fontSize: '12px', marginTop: '5px', color: theme.text }}>
-            {i === 6 ? '6+' : i}
-          </span>
-          <span style={{ fontSize: '10px', color: theme.subText }}>{count}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 export default function DeckBuilder({
   activeDeck,
   updateActiveDeck,
@@ -149,44 +21,41 @@ export default function DeckBuilder({
   onGoBack,
   onDeleteDeck
 }: DeckBuilderProps) {
-  const [activeTab, setActiveTab] = useState<'main' | 'sideboard'>('main')
+  const [cardMap, setCardMap] = useState<Record<string, CardData>>({})
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortMethod, setSortMethod] = useState('cmc_low')
+  const [viewMode, setViewMode] = useState('stacks')
+  const [groupMethod, setGroupMethod] = useState('section')
+
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  const [hoveredCard, setHoveredCard] = useState<HydratedCard | null>(null)
+  const [selectedCard, setSelectedCard] = useState<HydratedCard | null>(null)
 
   const [importText, setImportText] = useState('')
   const [isImporting, setIsImporting] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
   const [importErrors, setImportErrors] = useState<string[]>([])
 
-  const [hoveredCard, setHoveredCard] = useState<CardData | null>(null)
-  const [hoverImage, setHoverImage] = useState<string | null>(null)
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
-
-  const mainCards = activeDeck.cards || []
-  const sideCards = activeDeck.sideboard || []
-
   useEffect(() => {
-    let isMounted = true
-    if (hoveredCard) {
-      setHoverImage(null)
-      ;(window as any).api
-        .getCardImage(hoveredCard.id, hoveredCard.imageUrl)
-        .then((img: string) => {
-          if (isMounted) setHoverImage(img)
-        })
+    const fetchMissing = async () => {
+      const missingIds = activeDeck.cards.filter((c) => !cardMap[c.id]).map((c) => c.id)
+      if (missingIds.length > 0) {
+        const newCardData = await (window as any).api.hydrateCards(missingIds)
+        setCardMap((prev) => ({ ...prev, ...newCardData }))
+      }
     }
-    return () => {
-      isMounted = false
-    }
-  }, [hoveredCard])
+    fetchMissing()
+  }, [activeDeck.cards, cardMap])
+
+  const hydratedCards: HydratedCard[] = useMemo(() => {
+    return activeDeck.cards.filter((c) => cardMap[c.id]).map((c) => ({ ...cardMap[c.id], ...c }))
+  }, [activeDeck.cards, cardMap])
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
     setTimeout(() => setToastMessage(null), 2500)
-  }
-
-  const compressAndEncode = async (text: string) => {
-    const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('deflate-raw'))
-    const buffer = await new Response(stream).arrayBuffer()
-    return btoa(String.fromCharCode(...new Uint8Array(buffer)))
   }
 
   const decodeAndDecompress = async (base64: string) => {
@@ -205,25 +74,6 @@ export default function DeckBuilder({
     }
   }
 
-  const handleExportText = async () => {
-    let text = mainCards.map((c) => `${c.quantity} ${c.name}`).join('\n')
-    if (sideCards.length > 0) {
-      text += '\nSideboard\n' + sideCards.map((c) => `${c.quantity} ${c.name}`).join('\n')
-    }
-    await navigator.clipboard.writeText(text)
-    showToast('Decklist copied to clipboard!')
-  }
-
-  const handleExportCode = async () => {
-    const encodeBoard = (cards: CardData[]) => cards.map((c) => `${c.quantity}${c.name}`).join('|')
-    let compactText = encodeBoard(mainCards)
-    if (sideCards.length > 0) compactText += '||' + encodeBoard(sideCards)
-
-    const compressed = await compressAndEncode(compactText)
-    await navigator.clipboard.writeText(compressed)
-    showToast('Deck Code copied!')
-  }
-
   const handleImport = async () => {
     let parsedText = importText.trim()
     if (!parsedText) return
@@ -235,31 +85,24 @@ export default function DeckBuilder({
       parsedText = await decodeAndDecompress(parsedText)
     }
 
-    let lines: string[] = []
-    if (parsedText.includes('|')) {
-      const parts = parsedText.split('||')
-      if (parts[0]) lines.push(...parts[0].split('|'))
-      if (parts[1]) {
-        lines.push('Sideboard')
-        lines.push(...parts[1].split('|'))
-      }
-    } else {
-      lines = parsedText.split('\n')
+    let lines = parsedText.split('\n')
+    if (parsedText.includes('|') && !parsedText.includes('\n')) {
+      lines = parsedText.split('|').filter(Boolean)
     }
 
-    const mainImported: CardData[] = []
-    const sideImported: CardData[] = []
+    const newCards = [...activeDeck.cards]
+    const newSections = new Set(activeDeck.sections)
     const failedCards: string[] = []
 
-    let currentTarget: 'main' | 'sideboard' = activeTab
+    let currentSection = activeDeck.sections[0] || 'Mainboard'
+    newSections.add(currentSection)
 
     for (const line of lines) {
-      if (line.trim().toLowerCase() === 'sideboard') {
-        currentTarget = 'sideboard'
-        continue
-      }
+      const trimmed = line.trim()
+      if (!trimmed) continue
 
-      const match = line.trim().match(/^(\d+)\s*(.+)$/)
+      const match = trimmed.match(/^(\d+)[xX]?\s+(.+)$/)
+
       if (match) {
         const quantity = parseInt(match[1])
         const cardName = match[2].trim()
@@ -267,122 +110,117 @@ export default function DeckBuilder({
         const result = await (window as any).api.getCardData(cardName)
 
         if (result.success) {
-          if (currentTarget === 'main') mainImported.push({ ...result.data, quantity })
-          else sideImported.push({ ...result.data, quantity })
+          const cardData = result.data as CardData
+          setCardMap((prev) => ({ ...prev, [cardData.name]: cardData }))
+
+          const existing = newCards.findIndex(
+            (c) => c.id === cardData.name && c.section === currentSection
+          )
+          if (existing !== -1) {
+            newCards[existing].quantity += quantity
+          } else {
+            newCards.push({ id: cardData.name, quantity, section: currentSection })
+          }
         } else {
           failedCards.push(cardName)
         }
+      } else {
+        currentSection = trimmed
+        newSections.add(currentSection)
       }
     }
 
     if (failedCards.length > 0) setImportErrors(failedCards)
 
-    const newMainCards = [...mainCards]
-    for (const card of mainImported) {
-      const existing = newMainCards.findIndex(
-        (c) => c.name.toLowerCase() === card.name.toLowerCase()
-      )
-      if (existing !== -1)
-        newMainCards[existing] = {
-          ...newMainCards[existing],
-          quantity: newMainCards[existing].quantity + card.quantity
-        }
-      else newMainCards.push(card)
-    }
-
-    const newSideCards = [...sideCards]
-    for (const card of sideImported) {
-      const existing = newSideCards.findIndex(
-        (c) => c.name.toLowerCase() === card.name.toLowerCase()
-      )
-      if (existing !== -1)
-        newSideCards[existing] = {
-          ...newSideCards[existing],
-          quantity: newSideCards[existing].quantity + card.quantity
-        }
-      else newSideCards.push(card)
-    }
-
-    updateActiveDeck({ cards: newMainCards, sideboard: newSideCards })
+    updateActiveDeck({ cards: newCards, sections: Array.from(newSections) })
     setImportText('')
     setIsImporting(false)
   }
 
+  const handleExportList = async () => {
+    let lines: string[] = []
+    activeDeck.sections.forEach((section) => {
+      const sectionCards = hydratedCards.filter((c) => c.section === section)
+      if (sectionCards.length === 0) return
+      lines.push(section)
+      sectionCards.forEach((c) => lines.push(`${c.quantity} ${c.name}`))
+      lines.push('')
+    })
+    await navigator.clipboard.writeText(lines.join('\n').trim())
+    showToast('Decklist copied to clipboard!')
+  }
+
+  const handleExportCode = async () => {
+    const stream = new Blob([
+      activeDeck.cards.map((c) => `${c.quantity}${c.section}|${c.id}`).join('\n')
+    ])
+      .stream()
+      .pipeThrough(new CompressionStream('deflate-raw'))
+    const buffer = await new Response(stream).arrayBuffer()
+    await navigator.clipboard.writeText(btoa(String.fromCharCode(...new Uint8Array(buffer))))
+    showToast('Deck Code copied!')
+  }
+
   const handleReloadPrices = async () => {
     setIsRefreshing(true)
-    const updatedMain = [...mainCards]
-    const updatedSide = [...sideCards]
-
-    for (let i = 0; i < updatedMain.length; i++) {
-      const result = await (window as any).api.getCardData(updatedMain[i].name, true)
-      if (result.success) updatedMain[i] = { ...updatedMain[i], prices: result.data.prices }
+    const uniqueIds = Array.from(new Set(activeDeck.cards.map((c) => c.id)))
+    for (const id of uniqueIds) {
+      const cardName = cardMap[id]?.name
+      if (!cardName) continue
+      const result = await (window as any).api.getCardData(cardName, true)
+      if (result.success) setCardMap((prev) => ({ ...prev, [id]: result.data }))
     }
-
-    for (let i = 0; i < updatedSide.length; i++) {
-      const result = await (window as any).api.getCardData(updatedSide[i].name, true)
-      if (result.success) updatedSide[i] = { ...updatedSide[i], prices: result.data.prices }
-    }
-
-    updateActiveDeck({ cards: updatedMain, sideboard: updatedSide })
     setIsRefreshing(false)
     showToast('Prices updated!')
   }
 
-  const setExactQuantity = (card: CardData, amount: number, board: 'main' | 'sideboard') => {
-    if (amount <= 0) {
-      removeCard(card, board)
-      return
-    }
-    const list = board === 'main' ? mainCards : sideCards
-    const newCards = list.map((c) => (c.id === card.id ? { ...c, quantity: amount } : c))
-
-    if (board === 'main') updateActiveDeck({ cards: newCards })
-    else updateActiveDeck({ sideboard: newCards })
+  const setExactQuantity = (cardId: string, section: string, amount: number) => {
+    let newCards = [...activeDeck.cards]
+    if (amount <= 0) newCards = newCards.filter((c) => !(c.id === cardId && c.section === section))
+    else
+      newCards = newCards.map((c) =>
+        c.id === cardId && c.section === section ? { ...c, quantity: amount } : c
+      )
+    updateActiveDeck({ cards: newCards })
+    if (selectedCard)
+      setSelectedCard(hydratedCards.find((c) => c.id === cardId && c.section === section) || null)
   }
 
-  const removeCard = (card: CardData, board: 'main' | 'sideboard') => {
-    const list = board === 'main' ? mainCards : sideCards
-    const newCards = list.filter((c) => c.id !== card.id)
+  const moveCardSection = (
+    cardId: string,
+    oldSection: string,
+    newSection: string,
+    amount: number
+  ) => {
+    if (oldSection === newSection) return
+    const newCards = [...activeDeck.cards]
+    const sourceIndex = newCards.findIndex((c) => c.id === cardId && c.section === oldSection)
+    if (sourceIndex > -1) newCards.splice(sourceIndex, 1)
 
-    if (board === 'main') updateActiveDeck({ cards: newCards })
-    else updateActiveDeck({ sideboard: newCards })
+    const targetIndex = newCards.findIndex((c) => c.id === cardId && c.section === newSection)
+    if (targetIndex > -1) newCards[targetIndex].quantity += amount
+    else newCards.push({ id: cardId, quantity: amount, section: newSection })
+
+    updateActiveDeck({ cards: newCards })
+    setSelectedCard(null)
   }
-
-  const mainCount = mainCards.reduce((sum, c) => sum + c.quantity, 0)
-  const sideCount = sideCards.reduce((sum, c) => sum + c.quantity, 0)
-
-  const mainPrice = mainCards.reduce(
-    (sum, card) => sum + parseFloat(card.prices?.usd || '0') * card.quantity,
-    0
-  )
-  const sidePrice = sideCards.reduce(
-    (sum, card) => sum + parseFloat(card.prices?.usd || '0') * card.quantity,
-    0
-  )
-
-  const currentList = activeTab === 'main' ? mainCards : sideCards
-  const sortedCards = [...currentList].sort((a, b) => {
-    if (a.cmc !== b.cmc) return a.cmc - b.cmc
-    return a.name.localeCompare(b.name)
-  })
 
   return (
     <div
       style={{
         height: '100vh',
         width: '100vw',
-        padding: '20px',
-        boxSizing: 'border-box',
+        backgroundColor: t.bg,
         display: 'flex',
-        gap: '20px',
-        overflow: 'hidden',
+        flexDirection: 'column',
+        overflowY: 'auto',
         position: 'relative'
       }}
     >
       {toastMessage && (
         <div
           style={{
-            position: 'absolute',
+            position: 'fixed',
             bottom: '30px',
             left: '50%',
             transform: 'translateX(-50%)',
@@ -394,613 +232,237 @@ export default function DeckBuilder({
             fontSize: '14px',
             zIndex: 1000,
             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            pointerEvents: 'none',
-            animation: 'fadeOutToast 2.5s forwards'
+            pointerEvents: 'none'
           }}
         >
           {toastMessage}
         </div>
       )}
 
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          overflowY: 'auto',
-          paddingRight: '10px'
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-          <button
-            onClick={onGoBack}
-            style={{
-              padding: '8px 15px',
-              cursor: 'pointer',
-              backgroundColor: t.element,
-              color: t.text,
-              border: `1px solid ${t.border}`,
-              borderRadius: '5px'
-            }}
-          >
-            ← Back
-          </button>
-          <button
-            onClick={() => {
-              if (window.confirm(`Delete "${activeDeck.name}"?`)) onDeleteDeck(activeDeck.id)
-            }}
-            style={{
-              padding: '8px 15px',
-              cursor: 'pointer',
-              backgroundColor: t.danger,
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px'
-            }}
-          >
-            🗑 Delete Deck
-          </button>
-        </div>
-
-        <input
-          value={activeDeck.name}
-          onChange={(e) => updateActiveDeck({ name: e.target.value })}
-          style={{
-            fontSize: '24px',
-            fontWeight: 'bold',
-            padding: '10px',
-            backgroundColor: t.panel,
-            color: t.text,
-            border: `1px solid ${t.border}`,
-            borderRadius: '5px',
-            width: '100%'
+      {selectedCard && (
+        <CardModal
+          card={selectedCard}
+          sections={activeDeck.sections}
+          theme={t}
+          onClose={() => setSelectedCard(null)}
+          onUpdateQuantity={setExactQuantity}
+          onMoveCard={moveCardSection}
+          onSetCover={(id, url) => {
+            updateActiveDeck({ coverCardId: id, coverCardUrl: url })
+            showToast('Deck cover updated!')
           }}
         />
-
-        <div style={{ marginTop: '20px' }}>
-          <label
-            style={{ fontSize: '14px', color: t.subText, display: 'block', marginBottom: '5px' }}
-          >
-            Format
-          </label>
-          <select
-            value={activeDeck.format}
-            onChange={(e) => updateActiveDeck({ format: e.target.value })}
-            style={{
-              width: '100%',
-              padding: '10px',
-              backgroundColor: t.inputBg,
-              color: t.text,
-              border: `1px solid ${t.border}`,
-              borderRadius: '5px'
-            }}
-          >
-            {formats.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div style={{ marginTop: '20px' }}>
-          <label
-            style={{ fontSize: '14px', color: t.subText, display: 'block', marginBottom: '5px' }}
-          >
-            Tags
-          </label>
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '8px',
-              padding: '10px',
-              backgroundColor: t.inputBg,
-              border: `1px solid ${t.border}`,
-              borderRadius: '5px',
-              minHeight: '40px',
-              alignItems: 'center'
-            }}
-          >
-            {activeDeck.tags.map((tag) => (
-              <div
-                key={tag}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  background: t.primary,
-                  color: 'white',
-                  padding: '4px 10px',
-                  borderRadius: '15px',
-                  fontSize: '13px'
-                }}
-              >
-                {tag}
-                <button
-                  onClick={() =>
-                    updateActiveDeck({ tags: activeDeck.tags.filter((tg) => tg !== tag) })
-                  }
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'rgba(255,255,255,0.7)',
-                    marginLeft: '6px',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    padding: 0
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-            <input
-              type="text"
-              placeholder="Add tag..."
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const val = e.currentTarget.value.trim()
-                  if (val && !activeDeck.tags.includes(val)) {
-                    updateActiveDeck({ tags: [...activeDeck.tags, val] })
-                    e.currentTarget.value = ''
-                  }
-                }
-              }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: t.text,
-                outline: 'none',
-                fontSize: '14px',
-                flex: 1,
-                minWidth: '80px'
-              }}
-            />
-          </div>
-        </div>
-
-        <div
-          style={{
-            marginTop: '20px',
-            backgroundColor: t.panel,
-            padding: '15px',
-            borderRadius: '10px',
-            border: `1px solid ${t.border}`
-          }}
-        >
-          <h3 style={{ margin: '0 0 15px 0' }}>Import / Export</h3>
-
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-            <button
-              onClick={handleExportText}
-              style={{
-                flex: 1,
-                padding: '8px',
-                backgroundColor: t.element,
-                color: t.text,
-                border: `1px solid ${t.border}`,
-                borderRadius: '5px',
-                cursor: 'pointer',
-                fontSize: '13px'
-              }}
-            >
-              Export as List
-            </button>
-            <button
-              onClick={handleExportCode}
-              style={{
-                flex: 1,
-                padding: '8px',
-                backgroundColor: t.element,
-                color: t.text,
-                border: `1px solid ${t.border}`,
-                borderRadius: '5px',
-                cursor: 'pointer',
-                fontSize: '13px'
-              }}
-            >
-              Export as Code
-            </button>
-          </div>
-
-          <p style={{ fontSize: '12px', color: t.subText, margin: '0 0 5px 0' }}>
-            Paste text or Base64 Deck Code here:
-          </p>
-          <textarea
-            value={importText}
-            onChange={(e) => setImportText(e.target.value)}
-            style={{
-              width: '100%',
-              height: '100px',
-              padding: '10px',
-              borderRadius: '5px',
-              backgroundColor: t.inputBg,
-              color: t.text,
-              border: `1px solid ${t.border}`,
-              resize: 'none'
-            }}
-          />
-          <button
-            onClick={handleImport}
-            disabled={isImporting}
-            style={{
-              marginTop: '10px',
-              padding: '10px',
-              backgroundColor: t.primary,
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              width: '100%'
-            }}
-          >
-            {isImporting ? (
-              <span className="spinner" style={{ display: 'inline-block' }}>
-                ⟳
-              </span>
-            ) : (
-              `Import to ${activeTab === 'main' ? 'Mainboard' : 'Sideboard'}`
-            )}
-          </button>
-
-          {importErrors.length > 0 && (
-            <div
-              style={{
-                marginTop: '15px',
-                padding: '10px',
-                backgroundColor: 'rgba(220, 53, 69, 0.1)',
-                border: `1px solid ${t.danger}`,
-                borderRadius: '5px'
-              }}
-            >
-              <strong style={{ color: t.danger, fontSize: '14px' }}>
-                Could not find these cards:
-              </strong>
-              <ul
-                style={{
-                  margin: '5px 0 0 0',
-                  paddingLeft: '20px',
-                  color: t.danger,
-                  fontSize: '13px'
-                }}
-              >
-                {importErrors.map((err) => (
-                  <li key={err}>{err}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
+      )}
 
       <div
         style={{
-          flex: 1.5,
-          backgroundColor: t.panel,
-          padding: '20px',
-          borderRadius: '10px',
-          overflowY: 'auto',
-          border: `1px solid ${t.border}`
-        }}
-      >
-        <h3 style={{ marginTop: 0, display: 'flex', gap: '15px', fontSize: '20px' }}>
-          <span
-            onClick={() => setActiveTab('main')}
-            style={{
-              cursor: 'pointer',
-              color: activeTab === 'main' ? t.text : t.subText,
-              textDecoration: activeTab === 'main' ? 'underline' : 'none',
-              textUnderlineOffset: '5px'
-            }}
-          >
-            Decklist
-          </span>
-          <span style={{ color: t.border }}>/</span>
-          <span
-            onClick={() => setActiveTab('sideboard')}
-            style={{
-              cursor: 'pointer',
-              color: activeTab === 'sideboard' ? t.text : t.subText,
-              textDecoration: activeTab === 'sideboard' ? 'underline' : 'none',
-              textUnderlineOffset: '5px'
-            }}
-          >
-            Sideboard
-          </span>
-        </h3>
-
-        {sortedCards.length === 0 && (
-          <p style={{ color: t.subText }}>No cards in {activeTab} yet.</p>
-        )}
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {sortedCards.map((card) => {
-            const formatLimit = activeDeck.format.toLowerCase() === 'commander' ? 1 : 4
-            const isBasicLand =
-              card.type_line?.toLowerCase().includes('basic land') ||
-              card.type_line?.toLowerCase().includes('basic snow land')
-
-            const totalInDeck =
-              (mainCards.find((c) => c.name === card.name)?.quantity || 0) +
-              (sideCards.find((c) => c.name === card.name)?.quantity || 0)
-            const overLimit = !isBasicLand && totalInDeck > formatLimit
-
-            const activeFormat = activeDeck.format.toLowerCase() || 'standard'
-            const isIllegal =
-              card.legalities?.[activeFormat] !== 'legal' &&
-              !(activeFormat === 'vintage' && card.legalities?.['vintage'] === 'restricted')
-            const hasWarning = isIllegal || overLimit
-
-            return (
-              <div
-                key={card.id}
-                onMouseEnter={() => setHoveredCard(card)}
-                style={{
-                  padding: '10px',
-                  backgroundColor: t.element,
-                  borderRadius: '5px',
-                  border: hasWarning ? `1px solid ${t.danger}` : `1px solid transparent`,
-                  boxShadow: hasWarning ? `0 0 5px rgba(220, 53, 69, 0.3)` : 'none'
-                }}
-              >
-                <div
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        gap: '5px',
-                        background: t.inputBg,
-                        border: `1px solid ${t.border}`,
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        alignItems: 'center'
-                      }}
-                    >
-                      <button
-                        onClick={() => setExactQuantity(card, card.quantity - 1, activeTab)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: t.subText,
-                          cursor: 'pointer',
-                          fontSize: '16px'
-                        }}
-                      >
-                        -
-                      </button>
-                      <QuantityInput
-                        quantity={card.quantity}
-                        onChange={(val: number) => setExactQuantity(card, val, activeTab)}
-                        onRemove={() => removeCard(card, activeTab)}
-                        theme={t}
-                      />
-                      <button
-                        onClick={() => setExactQuantity(card, card.quantity + 1, activeTab)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: t.subText,
-                          cursor: 'pointer',
-                          fontSize: '16px'
-                        }}
-                      >
-                        +
-                      </button>
-                    </div>
-                    <span style={{ fontWeight: 'bold', fontSize: '15px' }}>{card.name}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <ManaCost cost={card.mana_cost} />
-                    <span
-                      style={{
-                        color: t.success,
-                        width: '50px',
-                        textAlign: 'right',
-                        fontSize: '14px',
-                        fontWeight: 'bold'
-                      }}
-                    >
-                      {card.prices?.usd ? `$${card.prices.usd}` : 'N/A'}
-                    </span>
-                  </div>
-                </div>
-                {hasWarning && (
-                  <div
-                    style={{
-                      color: t.danger,
-                      fontSize: '12px',
-                      marginTop: '8px',
-                      paddingLeft: '5px'
-                    }}
-                  >
-                    {isIllegal ? `• Not legal in ${activeDeck.format}. ` : ''}
-                    {overLimit ? `• Max ${formatLimit} allowed (Main+Side).` : ''}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <div
-        style={{
-          flex: 1.2,
+          maxWidth: '1400px',
+          width: '100%',
+          margin: '0 auto',
+          padding: '30px',
           display: 'flex',
           flexDirection: 'column',
-          overflowY: 'auto',
-          paddingRight: '5px'
+          gap: '20px'
         }}
       >
         <div
           style={{
-            flex: 1,
-            maxHeight: '420px',
-            minHeight: '320px',
-            backgroundColor: t.panel,
+            borderRadius: '6px',
             border: `1px solid ${t.border}`,
-            borderRadius: '10px',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            overflow: 'hidden',
-            padding: '10px',
-            paddingBottom: '20px',
-            position: 'relative'
+            boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
           }}
         >
-          {hoverImage ? (
-            <>
-              <img
-                src={hoverImage}
-                alt="Preview"
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  borderRadius: '10px',
-                  objectFit: 'contain'
-                }}
-              />
-
-              {hoveredCard && (
-                <button
-                  onClick={() =>
-                    updateActiveDeck({
-                      coverCardId: hoveredCard.id,
-                      coverCardUrl: hoveredCard.imageUrl
-                    })
-                  }
-                  style={{
-                    position: 'absolute',
-                    bottom: '5px',
-                    padding: '8px 15px',
-                    backgroundColor: 'rgba(0,0,0,0.7)',
-                    color: 'white',
-                    border: `1px solid #555`,
-                    borderRadius: '20px',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    backdropFilter: 'blur(4px)',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.9)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.7)')}
-                >
-                  Set as Deck Cover
-                </button>
-              )}
-            </>
-          ) : (
-            <p style={{ color: t.subText }}>Hover a card to preview</p>
-          )}
+          <DeckHeader
+            activeDeck={activeDeck}
+            updateActiveDeck={updateActiveDeck}
+            hydratedCards={hydratedCards}
+            theme={t}
+            onGoBack={onGoBack}
+            onExportList={handleExportList}
+            onExportCode={handleExportCode}
+            onDeleteDeck={onDeleteDeck}
+            onReloadPrices={handleReloadPrices}
+            isRefreshing={isRefreshing}
+          />
         </div>
-
-        <ManaCurve cards={mainCards} theme={t} />
 
         <div
           style={{
-            marginTop: '15px',
-            backgroundColor: t.panel,
+            borderRadius: '6px',
             border: `1px solid ${t.border}`,
-            padding: '15px',
-            borderRadius: '10px'
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            backgroundColor: t.panel
           }}
         >
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '16px' }}>Deck Stats</h3>
+          <DeckToolbar
+            theme={t}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            sortMethod={sortMethod}
+            setSortMethod={setSortMethod}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            groupMethod={groupMethod}
+            setGroupMethod={setGroupMethod}
+            onImportClick={() => setShowImportModal(true)}
+          />
+        </div>
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '13px',
-              marginBottom: '4px'
-            }}
-          >
-            <span style={{ color: t.subText }}>Mainboard</span>
-            <strong>{mainCount}</strong>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '13px',
-              marginBottom: '4px'
-            }}
-          >
-            <span style={{ color: t.subText }}>Sideboard</span>
-            <strong>{sideCount}</strong>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '14px',
-              marginBottom: '12px',
-              borderTop: `1px solid ${t.border}`,
-              paddingTop: '4px'
-            }}
-          >
-            <span style={{ color: t.subText }}>Total Cards</span>
-            <strong>{mainCount + sideCount}</strong>
-          </div>
+        <div
+          style={{
+            borderRadius: '6px',
+            border: `1px solid ${t.border}`,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            backgroundColor: t.panel
+          }}
+        >
+          <DeckCards
+            activeDeck={activeDeck}
+            hydratedCards={hydratedCards}
+            updateActiveDeck={updateActiveDeck}
+            setHoveredCard={setHoveredCard}
+            onCardClick={setSelectedCard}
+            searchQuery={searchQuery}
+            sortMethod={sortMethod}
+            viewMode={viewMode}
+            groupMethod={groupMethod}
+            theme={t}
+          />
+        </div>
+        <div
+          style={{
+            borderRadius: '6px',
+            border: `1px solid ${t.border}`,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            backgroundColor: t.panel
+          }}
+        >
+          <DeckStats 
+            activeDeck={activeDeck} 
+            hydratedCards={hydratedCards} 
+            theme={t} 
+          />
+        </div>
+      </div>
 
+      {showImportModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            zIndex: 1000,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center'
+          }}
+        >
           <div
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '13px',
-              marginBottom: '4px'
+              backgroundColor: t.panel,
+              padding: '25px',
+              borderRadius: '10px',
+              width: '500px',
+              border: `1px solid ${t.border}`,
+              boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
             }}
           >
-            <span style={{ color: t.subText }}>Mainboard Value</span>
-            <strong style={{ color: t.success }}>${mainPrice.toFixed(2)}</strong>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '13px',
-              marginBottom: '4px'
-            }}
-          >
-            <span style={{ color: t.subText }}>Sideboard Value</span>
-            <strong style={{ color: t.success }}>${sidePrice.toFixed(2)}</strong>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '16px',
-              alignItems: 'center',
-              borderTop: `1px solid ${t.border}`,
-              paddingTop: '6px'
-            }}
-          >
-            <span style={{ color: t.subText }}>Total Value</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <strong style={{ color: t.success }}>${(mainPrice + sidePrice).toFixed(2)}</strong>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '15px'
+              }}
+            >
+              <h2 style={{ margin: 0, color: t.text }}>Import Cards</h2>
               <button
-                onClick={handleReloadPrices}
-                disabled={isRefreshing}
+                onClick={() => setShowImportModal(false)}
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: t.text,
+                  color: t.subText,
                   cursor: 'pointer',
-                  fontSize: '16px',
-                  padding: 0
+                  fontSize: '20px'
                 }}
               >
-                <span className={isRefreshing ? 'spinner' : ''} style={{ display: 'inline-block' }}>
-                  ↻
-                </span>
+                ✕
               </button>
             </div>
+
+            <p style={{ color: t.subText, fontSize: '13px', marginBottom: '15px' }}>
+              Paste your decklist here. Use names for sections (e.g., "Mainboard", "Creatures").
+            </p>
+
+            <textarea
+              placeholder="Creatures&#10;4 Goblin Guide&#10;4 Monastery Swiftspear&#10;&#10;Instants&#10;4 Lightning Bolt"
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              style={{
+                width: '100%',
+                height: '200px',
+                padding: '15px',
+                borderRadius: '5px',
+                backgroundColor: t.inputBg,
+                color: t.text,
+                border: `1px solid ${t.border}`,
+                resize: 'none',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+
+            <button
+              onClick={handleImport}
+              disabled={isImporting}
+              style={{
+                marginTop: '15px',
+                padding: '12px',
+                backgroundColor: t.primary,
+                color: 'white',
+                border: 'none',
+                borderRadius: '5px',
+                cursor: 'pointer',
+                width: '100%',
+                fontWeight: 'bold'
+              }}
+            >
+              {isImporting ? 'Importing Cards...' : 'Import List'}
+            </button>
+
+            {importErrors.length > 0 && (
+              <div
+                style={{
+                  marginTop: '15px',
+                  padding: '15px',
+                  backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                  border: `1px solid ${t.danger}`,
+                  borderRadius: '5px'
+                }}
+              >
+                <strong style={{ color: t.danger, fontSize: '13px' }}>
+                  Could not find these cards:
+                </strong>
+                <ul
+                  style={{
+                    margin: '5px 0 0 0',
+                    paddingLeft: '20px',
+                    color: t.danger,
+                    fontSize: '12px'
+                  }}
+                >
+                  {importErrors.map((err) => (
+                    <li key={err}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
