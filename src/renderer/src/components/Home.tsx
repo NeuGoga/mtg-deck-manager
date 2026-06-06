@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { Deck } from '../types'
 import DeckCard from './DeckCard'
 
@@ -139,7 +139,7 @@ export default function Home({
           <input
             placeholder="Search by name or tag..."
             value={searchFilter}
-            onChange={(e) => setSearchFilter(e.target.value)}
+            onChange={handleSearchChange}
             style={{
               padding: '10px 15px',
               width: '250px',
@@ -204,11 +204,12 @@ export default function Home({
             display: 'flex',
             alignItems: 'flex-start',
             justifyContent: 'flex-start',
+            willChange: 'transform, opacity',
             animation:
               animDir === 'next'
-                ? 'slideInFromRight 0.3s ease-out'
+                ? 'slideInFromRight 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
                 : animDir === 'prev'
-                  ? 'slideInFromLeft 0.3s ease-out'
+                  ? 'slideInFromLeft 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
                   : 'none'
           }}
         >
