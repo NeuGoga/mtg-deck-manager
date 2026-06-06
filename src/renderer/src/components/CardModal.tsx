@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { HydratedCard } from '../types'
 
 interface CardModalProps {
@@ -59,6 +59,19 @@ export default function CardModal({
 }: CardModalProps) {
   const [activeTab, setActiveTab] = useState<'options' | 'info'>('options')
 
+  const cardId = card.scryfall_id || card.id
+  const [localImage, setLocalImage] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+    ;(window as any).api.getCardImage(cardId, card.imageUrl).then((img: string) => {
+      if (isMounted && img) setLocalImage(img)
+    })
+    return () => {
+      isMounted = false
+    }
+  }, [cardId, card.imageUrl])
+
   return (
     <div
       onClick={onClose}
@@ -101,7 +114,7 @@ export default function CardModal({
           }}
         >
           <img
-            src={card.imageUrl}
+            src={localImage || card.imageUrl}
             alt={card.name}
             style={{
               width: '300px',
@@ -111,7 +124,7 @@ export default function CardModal({
           />
 
           <button
-            onClick={() => onSetCover(card.id, card.imageUrl)}
+            onClick={() => onSetCover(card.scryfall_id, card.imageUrl)}
             style={{
               marginTop: '20px',
               width: '100%',

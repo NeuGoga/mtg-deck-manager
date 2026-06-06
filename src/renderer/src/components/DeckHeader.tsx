@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Deck, HydratedCard } from '../types'
 
 interface DeckHeaderProps {
@@ -30,6 +30,21 @@ export default function DeckHeader({
 }: DeckHeaderProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [showLegality, setShowLegality] = useState(false)
+  const [coverImg, setCoverImg] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+    if (activeDeck.coverCardId && activeDeck.coverCardUrl) {
+      ;(window as any).api
+        .getCardImage(activeDeck.coverCardId, activeDeck.coverCardUrl)
+        .then((img: string) => {
+          if (isMounted && img) setCoverImg(img)
+        })
+    }
+    return () => {
+      isMounted = false
+    }
+  }, [activeDeck.coverCardId, activeDeck.coverCardUrl])
 
   const mainboardCards = hydratedCards
     .filter((c) => c.section.toLowerCase() !== 'sideboard')
@@ -98,7 +113,7 @@ export default function DeckHeader({
               left: '-10%',
               width: '120%',
               height: '120%',
-              backgroundImage: `url(${activeDeck.coverCardUrl})`,
+              backgroundImage: `url(${coverImg || activeDeck.coverCardUrl})`,
               backgroundSize: 'cover',
               backgroundPosition: 'center 20%',
               filter: 'blur(20px)',

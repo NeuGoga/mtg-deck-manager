@@ -81,15 +81,24 @@ app.whenReady().then(() => {
     try {
       console.log(`Fetching ${cardName} from Scryfall...`)
       const response = await fetch(
-        `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName)}`
+        `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName)}`,
+        {
+          headers: {
+            'User-Agent': 'MTGDeckManager/1.7.5',
+            Accept: 'application/json'
+          }
+        }
       )
 
-      if (!response.ok) throw new Error(`Card not found`)
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
 
       const scryfallData = await response.json()
 
       const cardToSave = {
         id: scryfallData.id,
+        scryfall_id: scryfallData.id,
         name: scryfallData.name,
         mana_cost: scryfallData.mana_cost || scryfallData.card_faces?.[0]?.mana_cost || '',
         cmc: scryfallData.cmc || 0,
@@ -150,8 +159,10 @@ app.whenReady().then(() => {
     const hydrated: Record<string, any> = {}
     const dbValues = Object.values(db) as any[]
 
-    identifiers.forEach(identifier => {
-      const card = dbValues.find(c => c.id === identifier || c.name.toLowerCase() === identifier.toLowerCase())
+    identifiers.forEach((identifier) => {
+      const card = dbValues.find(
+        (c) => c.id === identifier || c.name.toLowerCase() === identifier.toLowerCase()
+      )
       if (card) hydrated[identifier] = card
     })
 

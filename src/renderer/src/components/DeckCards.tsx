@@ -14,6 +14,8 @@ interface DeckCardsProps {
   theme: any
 }
 
+const imageCache: Record<string, string> = {}
+
 const QuantityInput = ({ quantity, onChange, theme, fontSize = '13px', width = '20px' }: any) => {
   const [val, setVal] = useState(quantity.toString())
   useEffect(() => {
@@ -97,6 +99,25 @@ const StackedCard = ({
   const [isHovered, setIsHovered] = useState(false)
   const hoverTimer = useRef<any>(null)
 
+  const cardId = card.scryfall_id || card.id
+  const [localImage, setLocalImage] = useState<string | null>(imageCache[cardId] || null)
+
+  useEffect(() => {
+    if (localImage) return
+
+    let isMounted = true
+    ;(window as any).api.getCardImage(cardId, card.imageUrl).then((img: string) => {
+      if (img) {
+        imageCache[cardId] = img
+        if (isMounted) setLocalImage(img)
+      }
+    })
+
+    return () => {
+      isMounted = false
+    }
+  }, [cardId, card.imageUrl, localImage])
+
   const collapsedHeight = 46
   const expandedHeight = 380
   const isExpanded = isHovered || isLast
@@ -126,11 +147,13 @@ const StackedCard = ({
         width: '100%',
         height: isExpanded ? `${expandedHeight}px` : `${collapsedHeight}px`,
         marginBottom: isExpanded ? '28px' : '0px',
-        transition: 'height 0.2s ease-in-out, margin-bottom 0.2s ease-in-out',
+        transition: 'height 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), margin-bottom 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
+        willChange: 'height, margin-bottom',
+        transform: 'translateZ(0)',
         overflow: 'visible',
         display: 'flex',
         flexDirection: 'column',
-        backgroundImage: `url(${card.imageUrl})`,
+        backgroundImage: `url(${localImage || card.imageUrl})`,
         backgroundSize: '100% auto',
         backgroundPosition: 'top center',
         backgroundRepeat: 'no-repeat',

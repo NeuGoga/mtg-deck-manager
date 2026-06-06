@@ -1,5 +1,6 @@
 export interface CardData {
   id: string
+  scryfall_id: string
   name: string
   mana_cost: string
   cmc: number

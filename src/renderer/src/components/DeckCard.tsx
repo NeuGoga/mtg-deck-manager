@@ -29,12 +29,12 @@ export default function DeckCard({ deck, onClick, onDelete, theme }: DeckCardPro
       onClick={onClick}
       onMouseEnter={(e) => {
         setIsHovered(true)
-        e.currentTarget.style.transform = 'translateY(-5px)'
+        e.currentTarget.style.transform = 'translateY(-5px) translateZ(0)'
         e.currentTarget.style.boxShadow = `0 12px 20px rgba(0,0,0,0.6)`
       }}
       onMouseLeave={(e) => {
         setIsHovered(false)
-        e.currentTarget.style.transform = 'translateY(0)'
+        e.currentTarget.style.transform = 'translateY(0) translateZ(0)'
         e.currentTarget.style.boxShadow = `0 8px 16px rgba(0,0,0,0.4)`
       }}
       style={{
@@ -47,7 +47,9 @@ export default function DeckCard({ deck, onClick, onDelete, theme }: DeckCardPro
         display: 'flex',
         flexDirection: 'column',
         boxShadow: '0 8px 16px rgba(0,0,0,0.4)',
-        transition: 'transform 0.2s, box-shadow 0.2s',
+        transition: 'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
+        willChange: 'height, margin-bottom',
+        transform: 'translateZ(0)',
         overflow: 'hidden',
         position: 'relative'
       }}

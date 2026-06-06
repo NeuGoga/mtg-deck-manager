@@ -50,7 +50,13 @@ export default function DeckBuilder({
   }, [activeDeck.cards, cardMap])
 
   const hydratedCards: HydratedCard[] = useMemo(() => {
-    return activeDeck.cards.filter((c) => cardMap[c.id]).map((c) => ({ ...cardMap[c.id], ...c }))
+    return activeDeck.cards
+      .filter((c) => cardMap[c.id])
+      .map((c) => {
+        const dbCard = cardMap[c.id]
+        const scryfall_id = dbCard.scryfall_id || dbCard.id
+        return { ...dbCard, scryfall_id, ...c }
+      })
   }, [activeDeck.cards, cardMap])
 
   const showToast = (msg: string) => {
@@ -122,6 +128,7 @@ export default function DeckBuilder({
             newCards.push({ id: cardData.name, quantity, section: currentSection })
           }
         } else {
+          console.error(`Import failed for [${cardName}]: ${result.error}`)
           failedCards.push(cardName)
         }
       } else {
@@ -337,11 +344,7 @@ export default function DeckBuilder({
             backgroundColor: t.panel
           }}
         >
-          <DeckStats 
-            activeDeck={activeDeck} 
-            hydratedCards={hydratedCards} 
-            theme={t} 
-          />
+          <DeckStats activeDeck={activeDeck} hydratedCards={hydratedCards} theme={t} />
         </div>
       </div>
 

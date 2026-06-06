@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { Deck } from '../types'
 import DeckCard from './DeckCard'
 
+let savedSearchFilter = ''
+let savedCurrentPage = 0
+
 interface HomeProps {
   decks: Deck[]
   theme: any
@@ -11,34 +14,57 @@ interface HomeProps {
   onDeleteDeck: (id: number) => void
 }
 
-export default function Home({ decks, theme, onCreateDeck, onOpenDeck, onOpenSettings, onDeleteDeck }: HomeProps) {
-  const [searchFilter, setSearchFilter] = useState('')
-  const [currentPage, setCurrentPage] = useState(0)
+export default function Home({
+  decks,
+  theme,
+  onCreateDeck,
+  onOpenDeck,
+  onOpenSettings,
+  onDeleteDeck
+}: HomeProps) {
+  const [searchFilter, setSearchFilter] = useState(savedSearchFilter)
+  const [currentPage, setCurrentPage] = useState(savedCurrentPage)
   const [animDir, setAnimDir] = useState<'next' | 'prev' | null>(null)
-  
-  const lastScrollTime = useRef(0)
-  const itemsPerPage = 10 
 
-  const filteredDecks = decks.filter(d => 
-    d.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
-    d.tags.some(tag => tag.toLowerCase().includes(searchFilter.toLowerCase()))
+  const lastScrollTime = useRef(0)
+  const itemsPerPage = 10
+
+  const filteredDecks = decks.filter(
+    (d) =>
+      d.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
+      d.tags.some((tag) => tag.toLowerCase().includes(searchFilter.toLowerCase()))
   )
 
   const totalPages = Math.max(1, Math.ceil(filteredDecks.length / itemsPerPage))
 
-  useEffect(() => { setCurrentPage(0) }, [searchFilter])
+  if (currentPage >= totalPages && totalPages > 0) {
+    setCurrentPage(totalPages - 1)
+    savedCurrentPage = totalPages - 1
+  }
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setSearchFilter(val)
+    savedSearchFilter = val
+    setCurrentPage(0)
+    savedCurrentPage = 0
+  }
 
   const startIndex = currentPage * itemsPerPage
   const visibleDecks = filteredDecks.slice(startIndex, startIndex + itemsPerPage)
 
   const changePage = (dir: 'next' | 'prev') => {
     setAnimDir(dir)
-    setCurrentPage(p => dir === 'next' ? p + 1 : p - 1)
+    setCurrentPage((p) => {
+      const newP = dir === 'next' ? p + 1 : p - 1
+      savedCurrentPage = newP
+      return newP
+    })
   }
 
   const handleWheel = (e: React.WheelEvent) => {
     const now = Date.now()
-    if (now - lastScrollTime.current < 400) return 
+    if (now - lastScrollTime.current < 400) return
 
     if (e.deltaY > 0 && currentPage < totalPages - 1) {
       lastScrollTime.current = now
@@ -49,7 +75,15 @@ export default function Home({ decks, theme, onCreateDeck, onOpenDeck, onOpenSet
     }
   }
 
-  const ArrowButton = ({ direction, onClick, isHidden }: { direction: 'prev' | 'next', onClick: () => void, isHidden: boolean }) => (
+  const ArrowButton = ({
+    direction,
+    onClick,
+    isHidden
+  }: {
+    direction: 'prev' | 'next'
+    onClick: () => void
+    isHidden: boolean
+  }) => (
     <button
       onClick={onClick}
       style={{
@@ -60,42 +94,95 @@ export default function Home({ decks, theme, onCreateDeck, onOpenDeck, onOpenSet
         cursor: 'pointer',
         padding: '20px',
         transition: 'transform 0.2s',
-        visibility: isHidden ? 'hidden' : 'visible' 
+        willChange: 'transform',
+        transform: 'translateZ(0)',
+        visibility: isHidden ? 'hidden' : 'visible'
       }}
-      onMouseEnter={e => !isHidden && (e.currentTarget.style.transform = 'scale(1.2)')}
-      onMouseLeave={e => !isHidden && (e.currentTarget.style.transform = 'scale(1)')}
+      onMouseEnter={(e) => !isHidden && (e.currentTarget.style.transform = 'scale(1.2)')}
+      onMouseLeave={(e) => !isHidden && (e.currentTarget.style.transform = 'scale(1)')}
     >
       {direction === 'prev' ? '◀' : '▶'}
     </button>
   )
 
   const animationStyles = `
-    @keyframes slideInFromRight { 0% { opacity: 0; transform: translateX(50px); } 100% { opacity: 1; transform: translateX(0); } }
-    @keyframes slideInFromLeft { 0% { opacity: 0; transform: translateX(-50px); } 100% { opacity: 1; transform: translateX(0); } }
+    @keyframes slideInFromRight { 0% { opacity: 0; transform: translate3d(50px, 0, 0); } 100% { opacity: 1; transform: translate3d(0, 0, 0); } }
+    @keyframes slideInFromLeft { 0% { opacity: 0; transform: translate3d(-50px, 0, 0); } 100% { opacity: 1; transform: translate3d(0, 0, 0); } }
   `
 
   return (
-    <div onWheel={handleWheel} style={{ height: '100vh', width: '100vw', padding: '30px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div
+      onWheel={handleWheel}
+      style={{
+        height: '100vh',
+        width: '100vw',
+        padding: '30px',
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}
+    >
       <style>{animationStyles}</style>
-      
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '30px'
+        }}
+      >
         <h1 style={{ margin: 0, color: theme.text }}>My Collection</h1>
-        
+
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-          <input 
-            placeholder="Search by name or tag..." 
-            value={searchFilter} 
-            onChange={(e) => setSearchFilter(e.target.value)} 
-            style={{ padding: '10px 15px', width: '250px', borderRadius: '5px', border: `1px solid ${theme.border}`, backgroundColor: theme.inputBg, color: theme.text, outline: 'none' }} 
+          <input
+            placeholder="Search by name or tag..."
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            style={{
+              padding: '10px 15px',
+              width: '250px',
+              borderRadius: '5px',
+              border: `1px solid ${theme.border}`,
+              backgroundColor: theme.inputBg,
+              color: theme.text,
+              outline: 'none'
+            }}
           />
-          <button onClick={onCreateDeck} style={{ padding: '10px 20px', backgroundColor: theme.success, color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>
+          <button
+            onClick={onCreateDeck}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: theme.success,
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
             + Create Deck
           </button>
-          <button 
-            onClick={onOpenSettings} title="Settings"
-            style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: theme.element, color: theme.text, border: `1px solid ${theme.border}`, cursor: 'pointer', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = theme.elementHover}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = theme.element}
+          <button
+            onClick={onOpenSettings}
+            title="Settings"
+            style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              backgroundColor: theme.element,
+              color: theme.text,
+              border: `1px solid ${theme.border}`,
+              cursor: 'pointer',
+              fontSize: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.2s'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = theme.elementHover)}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = theme.element)}
           >
             ⚙
           </button>
@@ -103,24 +190,78 @@ export default function Home({ decks, theme, onCreateDeck, onOpenDeck, onOpenSet
       </div>
 
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <ArrowButton direction="prev" onClick={() => changePage('prev')} isHidden={currentPage === 0} />
-        
-        <div key={currentPage} style={{ width: '1020px', height: '560px', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start', animation: animDir === 'next' ? 'slideInFromRight 0.3s ease-out' : animDir === 'prev' ? 'slideInFromLeft 0.3s ease-out' : 'none' }}>
+        <ArrowButton
+          direction="prev"
+          onClick={() => changePage('prev')}
+          isHidden={currentPage === 0}
+        />
+
+        <div
+          key={currentPage}
+          style={{
+            width: '1020px',
+            height: '560px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'flex-start',
+            animation:
+              animDir === 'next'
+                ? 'slideInFromRight 0.3s ease-out'
+                : animDir === 'prev'
+                  ? 'slideInFromLeft 0.3s ease-out'
+                  : 'none'
+          }}
+        >
           {visibleDecks.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gridAutoRows: 'max-content', gap: '20px', padding: '10px' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, 1fr)',
+                gridAutoRows: 'max-content',
+                gap: '20px',
+                padding: '10px'
+              }}
+            >
               {visibleDecks.map((deck) => (
-                <DeckCard key={deck.id} deck={deck} theme={theme} onClick={() => onOpenDeck(deck)} onDelete={onDeleteDeck} />
+                <DeckCard
+                  key={deck.id}
+                  deck={deck}
+                  theme={theme}
+                  onClick={() => onOpenDeck(deck)}
+                  onDelete={onDeleteDeck}
+                />
               ))}
             </div>
           ) : (
-            <div style={{ width: '100%', textAlign: 'center', color: theme.subText, fontSize: '20px', marginTop: '100px' }}>No decks found.</div>
+            <div
+              style={{
+                width: '100%',
+                textAlign: 'center',
+                color: theme.subText,
+                fontSize: '20px',
+                marginTop: '100px'
+              }}
+            >
+              No decks found.
+            </div>
           )}
         </div>
 
-        <ArrowButton direction="next" onClick={() => changePage('next')} isHidden={currentPage >= totalPages - 1} />
+        <ArrowButton
+          direction="next"
+          onClick={() => changePage('next')}
+          isHidden={currentPage >= totalPages - 1}
+        />
       </div>
 
-      <div style={{ textAlign: 'center', color: theme.subText, fontSize: '14px', paddingBottom: '10px' }}>
+      <div
+        style={{
+          textAlign: 'center',
+          color: theme.subText,
+          fontSize: '14px',
+          paddingBottom: '10px'
+        }}
+      >
         Page {currentPage + 1} of {totalPages}
       </div>
     </div>
