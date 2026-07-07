@@ -121,19 +121,39 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('get-card-image', async (_event, cardId, imageUrl) => {
-    const imagePath = path.join(imagesFolder, `${cardId}.jpg`)
+    const safeFilename = cardId.replace(/[/\\?%*:|"<>]/g, '-')
+    const imagePath = path.join(imagesFolder, `${safeFilename}.jpg`)
 
     if (fs.existsSync(imagePath)) {
-      const imageBuffer = fs.readFileSync(imagePath)
-      return `data:image/jpeg;base64,${imageBuffer.toString('base64')}`
+      const stats = fs.statSync(imagePath)
+      if (stats.size > 10000) {
+        const imageBuffer = fs.readFileSync(imagePath)
+        return `data:image/jpeg;base64,${imageBuffer.toString('base64')}`
+      } else {
+        console.log(`Corrupted image detected for ${safeFilename}. Deleting and retrying...`)
+        fs.unlinkSync(imagePath)
+      }
     }
 
     if (imageUrl) {
-      console.log('Downloading image from Scryfall...')
+      console.log(`Downloading image for ${safeFilename}...`)
       try {
-        const response = await fetch(imageUrl)
+        const response = await fetch(imageUrl, {
+          headers: {
+            'User-Agent': 'MTGDeckManager/1.0',
+            Accept: 'image/jpeg, image/png, image/webp, */*'
+          }
+        })
+
+        if (!response.ok) {
+          console.error(
+            `Failed to download image. Status: ${response.status} ${response.statusText}`
+          )
+          return null
+        }
+
         const arrayBuffer = await response.arrayBuffer()
-        const buffer = Buffer.from(arrayBuffer)
+        const buffer = Buffer.from(new Uint8Array(arrayBuffer))
 
         fs.writeFileSync(imagePath, buffer)
         return `data:image/jpeg;base64,${buffer.toString('base64')}`

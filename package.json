@@ -1,7 +1,7 @@
 {
   "name": "mtg-deck-manager",
   "productName": "MTG Deck Manager",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "An Electron application with React and TypeScript",
   "main": "./out/main/index.js",
   "author": "example.com",
